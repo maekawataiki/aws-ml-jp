@@ -327,6 +327,80 @@ def grade_documents(state):
     return {"keys": state_dict}
 
 
+def decide_to_generate_additional_queries(state):
+    """
+    Determines whether to generate additional queries, or use the original query.
+
+    Args:
+        state (dict): The current graph state
+
+    Returns:
+        str: Binary decision for next node to call
+    """
+
+    logger.debug("---DECIDE TO GENERATE ADDITIONAL QUERIES---")
+    n_additional_queries = state["keys"]["n_additional_queries"]
+
+    if n_additional_queries > 0:
+        logger.debug(
+            "---DECISION: GENERATE ADDITIONAL QUERIES---"
+        )
+        return "generate_additional_queries_enabled"
+    else:
+        logger.debug("---DECISION: NOT GENERATE ADDITIONAL QUERIES---")
+        return "generate_additional_queries_not_enabled"
+
+
+def generate_additional_queries(state):
+    """Generate a variety of queries (RAG-Fusion).
+
+    Args:
+        state (dict): The current graph state
+
+    Returns:
+        state (dict): The updated graph state with generated queries.
+    """
+    logger.debug("---GENERATE QUERIES---")
+    state_dict = state["keys"]
+    question = state_dict["question"]
+    generation = state_dict["generation"]
+    n_additional_queries = state_dict["n_additional_queries"]
+    settings = state_dict["settings"]
+
+    llm = ChatBedrock(
+        model_id="anthropic.claude-3-haiku-20240307-v1:0",
+        region_name=settings["aws_region"],
+        model_kwargs={
+            "temperature": 0,
+            "max_tokens": 512,
+        }
+    )
+
+    output_format = ""
+    for i in range(n_additional_queries):
+        output_format += f"{i}: fill a query here\n"
+    
+    prompt_template = templates["generate_additional_queries"].format(
+        output_format=output_format,
+        n_additional_queries=n_additional_queries,
+        question="{question}",  # as-is
+        generation="{generation}",  # as-is
+    )
+    prompt = ChatPromptTemplate.from_template(prompt_template)
+
+    chain = prompt | llm | StrOutputParser() | (lambda x: x.split("\n"))
+    queries = chain.invoke({"question": question, "generation": generation})
+    queries = [query.replace('"', '') for query in queries]
+    queries = [query for query in queries if re.match(r'^\d+:[^:]+$', query)]  # 数字:文字列の項目のみ抽出
+    queries = queries
+    logger.debug("queries:")
+    logger.debug(queries)
+
+    state_dict["additional_queries"] = queries
+
+    return {"keys": state_dict}
+
+
 def build_graph():
     workflow = StateGraph(GraphState)
 
@@ -336,6 +410,7 @@ def build_graph():
     workflow.add_node("retrieve", retrieve)
     workflow.add_node("grade_documents", grade_documents)
     workflow.add_node("generate", generate)
+    workflow.add_node("generate_additional_queries", generate_additional_queries)
 
     # グラフのフローを定義
     workflow.set_entry_point("entry_point")
@@ -357,7 +432,16 @@ def build_graph():
         }
     )
     workflow.add_edge("grade_documents", "generate")
-    workflow.add_edge("generate", END)
+    workflow.add_conditional_edges(
+        "generate",
+        decide_to_generate_additional_queries,
+        {
+            "generate_additional_queries_enabled": "generate_additional_queries",
+            "generate_additional_queries_not_enabled": END,
+        },
+    )
+    workflow.add_edge("generate_additional_queries", END)
+    # workflow.add_edge("generate", END)
 
     # グラフのコンパイル
     app = workflow.compile()

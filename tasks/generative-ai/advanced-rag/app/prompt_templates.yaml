@@ -58,7 +58,6 @@ generate: |
   回答内で検索結果からの情報を参照する場合は、情報が見つかったソースのドキュメントへの引用を含める必要があります。
   各結果には、参照すべき対応するdocument_idとtitleを付与します。
   回答に複数のドキュメントの抜粋からの情報が含まれている場合、<sources>には複数の<source>が含まれる可能性があることに注意してください。
-  <excerpts>を回答で直接引用しないでください。あなたの仕事は、ユーザーの質問に可能な限り簡潔に答えることです。
   以下の形式で回答を出力する必要があります。フォーマットとスペースに注意して、正確に従ってください。
   <answer>
     <answer_part>
@@ -99,3 +98,31 @@ grade_documents: |
   正確な情報を含んでいる場合は 'yes'、含んでいない場合は 'no' のバイナリスコアを返してください。
   
   {format_instructions}
+
+generate_additional_queries: |
+  検索エンジンへの入力クエリと結果を元に、ユーザーが次に興味を持つ周辺情報を得られるようにします。 
+  具体的には、原因、影響、類似する事柄を考慮し、ユーザーの視点を広げるような現在のクエリから一歩踏み込んだ新たなクエリを生成します。
+
+  以下の<question>と<answer>タグ内にはユーザーの入力した質問文と回答が入ります。
+
+  <question>
+  {question}
+  </question>
+  <answer>
+  {generation}
+  </answer>
+
+  この質問文と回答に基づいて、{n_additional_queries}個の質問文と被らないユーザーが次に興味を持ちそうな周辺情報に関する検索用クエリを生成してください。
+  各クエリは30トークン以内とし、広範囲の文書が取得できるようにしてください。
+  生成されたクエリは、<format>タグ内のフォーマットに従って出力してください。
+
+  <example>
+  question: Knowledge Bases for Amazon Bedrock ではどのベクトルデータベースを使えますか？
+  query 1: Knowledge Bases for Amazon Bedrock メリット
+  query 2: Knowledge Bases for Amazon Bedrock コスト
+  query 3: AWS データベース 検索 ベクトル
+  </example>
+
+  <format>
+  {output_format}
+  </format> 

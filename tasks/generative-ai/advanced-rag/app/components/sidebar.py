@@ -23,6 +23,8 @@ def sidebar():
     preretrieval_method = st.sidebar.radio("Pre-retrieval method", ("なし", "クエリ拡張"))
     # 検索後処理
     postretrieval_method = st.sidebar.radio("Post-retrieval method", ("なし", "検索結果の関連度評価"))
+    # 次検索候補
+    nextquery_method = st.sidebar.radio("Next Query method", ("なし", "次クエリ拡張提案"))
     return {
         #"use_advanced_rag": use_advanced_rag,
         "run_rag": run_rag,
@@ -31,4 +33,5 @@ def sidebar():
         "generator_model_id": generator_model_id,
         "preretrieval_method": preretrieval_method,
         "postretrieval_method": postretrieval_method,
+        "nextquery_method": nextquery_method,
     }

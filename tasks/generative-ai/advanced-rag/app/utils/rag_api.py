@@ -5,15 +5,17 @@ from utils import advanced_rag
 from utils.advanced_rag import build_graph
 from utils.s3_utils import generate_presigned_url_from_s3_uri
 
-ja2en = {"なし": None, "クエリ拡張": "generate_queries", "検索結果の関連度評価": "grade_documents"}
+ja2en = {"なし": None, "クエリ拡張": "generate_queries", "検索結果の関連度評価": "grade_documents", "次クエリ拡張提案": "generate_additional_queries"}
 
 def generate_rag_answer(query, settings):
     preretrieval_method = ja2en[settings["preretrieval_method"]]
     postretrieval_method = ja2en[settings["postretrieval_method"]]
+    nextquery_method = ja2en[settings["nextquery_method"]]
 
     inputs = {"keys": {
         "question": query,
         "n_queries": -1,
+        "n_additional_queries": -1,
         "grade_documents_enabled": "No",
         "settings": settings
     }}
@@ -21,6 +23,8 @@ def generate_rag_answer(query, settings):
         inputs["keys"]["n_queries"] = 3
     if postretrieval_method == "grade_documents":
         inputs["keys"]["grade_documents_enabled"] = "Yes"
+    if nextquery_method == "generate_additional_queries":
+        inputs["keys"]["n_additional_queries"] = 4
 
     app = build_graph()
 
@@ -32,7 +36,7 @@ def generate_rag_answer(query, settings):
                     for i, column in enumerate(columns):
                         with column:
                             st.markdown(f"""
-<div style="background-color:#f1f1f1; padding:0px 10px; border-radius:12px; font-size:12px;">
+<div style="background-color:#f1f1f1; color:#111111; padding:10px; border-radius:12px; font-size:12px;">
 {value["keys"]["queries"][i]}
 </div>
 """, unsafe_allow_html=True)
@@ -45,8 +49,22 @@ def generate_rag_answer(query, settings):
                     documents = value["keys"]["documents"]
                     with st.popover(f"{len(documents)}件の関連度の高いチャンク"):
                         show_documents(documents)
-    
-    return value
+                elif key == "generate":
+                    xml = value["keys"]["generation"]
+                    st.markdown(parse_answer(xml))
+                elif key == "generate_additional_queries":
+                    st.write(f"次の検索クエリ候補")
+                    columns = st.columns(value["keys"]["n_additional_queries"])
+                    for i, column in enumerate(columns):
+                        with column:
+                            st.markdown(f"""
+<div style="background-color:#f1f1f1; color:#111111; padding:10px; border-radius:12px; font-size:12px;">
+{value["keys"]["additional_queries"][i]}
+</div>
+""", unsafe_allow_html=True)
+                    st.write("")
+
+    # return value
     #st.write(value["keys"]["generation"])
     #for chunk in value["keys"]["generation"]:
     #    yield chunk
@@ -76,3 +94,33 @@ def show_documents(documents):
         else:
             st.write(f"Document ID: {document_id}")
         st.caption(document_excerpt.replace("\n", ""))
+
+
+def parse_answer(xml):
+    answer_parts = re.findall(r'<answer_part>(.*?)</answer_part>', xml, re.DOTALL)
+    result = ""
+    source_refs = ""
+    source_index = 1
+    unique_refs = set()
+    source_dic = {}
+    for part in answer_parts:
+        text = re.search(r'<text>(.*?)</text>', part, re.DOTALL).group(1).strip()
+        sources = re.findall(r'<source>(.*?)</source>', part, re.DOTALL)
+        source_str = ""
+        for source in sources:
+            document_id = re.search(r'<document_id>(.*?)</document_id>', source).group(1)
+            title = re.search(r'<title>(.*?)</title>', source).group(1)
+            if title in unique_refs:
+                source_str += f" \[{source_dic[title]}\]"
+            else:
+                source_str += f" \[{source_index}\]"
+                unique_refs.add(title)
+                source_dic[title] = source_index
+                if document_id.startswith("s3://"):
+                    presigned_url = generate_presigned_url_from_s3_uri(document_id)
+                    source_refs += f"\[{source_index}\] [{title}]({presigned_url})  \n"
+                else:
+                    source_refs += f"\[{source_index}\] {title}  \n"
+                source_index += 1
+        result += f"{text}{source_str}\n\n"
+    return result + "\n\n" + source_refs
